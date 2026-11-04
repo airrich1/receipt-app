@@ -197,7 +197,15 @@ $('file').onchange = async (e)=>{
 // ---------- ② 音声入力 ----------
 // iPhone の Chrome / Edge などは音声認識が使えないため、キーボードのマイクを案内する
 const IOS_NOT_SAFARI = /iP(hone|ad|od)/.test(navigator.userAgent) && /CriOS|FxiOS|EdgiOS/.test(navigator.userAgent);
-const SR = IOS_NOT_SAFARI ? null : (window.SpeechRecognition || window.webkitSpeechRecognition);
+// 一度「使えない」と分かった端末は、次からキーボード入力の案内にする
+const NO_SR = store.get('noSR', false);
+const SR = (IOS_NOT_SAFARI || NO_SR) ? null : (window.SpeechRecognition || window.webkitSpeechRecognition);
+function keyboardMode(){
+  recog = null; recording = false;
+  $('mic').classList.remove('rec');
+  $('mic').textContent = IOS_NOT_SAFARI ? '⌨️ 下の欄→キーボードの🎤で話す（Safariならボタンで話せます）' : '⌨️ 下の欄→キーボードの🎤で話す';
+  $('mic').onclick = ()=> $('memo').focus();
+}
 let recog = null, recording = false;
 if (SR){
   recog = new SR(); recog.lang='ja-JP'; recog.interimResults=true; recog.continuous=false;
@@ -206,29 +214,33 @@ if (SR){
     $('mic').classList.add('rec'); $('mic').textContent='🔴 聞いています…（タップで終了）'; };
   recog.onresult = (ev)=>{ let s=''; for (const r of ev.results) s += r[0].transcript;
     $('memo').value = base + s; onMemo(); };
-  recog.onend = ()=>{ recording=false; $('mic').classList.remove('rec'); $('mic').textContent='🎤 タップして話す'; };
+  recog.onend = ()=>{ if (!recog) return; recording=false; $('mic').classList.remove('rec'); $('mic').textContent='🎤 タップして話す'; };
   recog.onerror = (ev)=>{
     const msg = {
       'not-allowed':'マイクがブロックされています。アドレス欄の🔒からマイクを「許可」にしてください',
-      'service-not-allowed':'音声入力が使えません。iPhoneは「設定→一般→キーボード→音声入力」をオンにするか、キーボードのマイクで入力してください',
+      'service-not-allowed':'この端末ではボタンでの音声入力が使えません。下の欄をタップして、キーボードの🎤で話してください',
       'no-speech':'声が聞き取れませんでした。もう一度🎤を押して話してください',
       'audio-capture':'マイクが見つかりません。マイクの接続を確認してください',
       'network':'音声入力にはネット接続が必要です'
     }[ev.error];
     if (ev.error!=='aborted') toast(msg || ('音声入力エラー：'+ev.error));
+    if (ev.error==='service-not-allowed'){ store.set('noSR', true); keyboardMode(); }
   };
 } else {
-  $('mic').textContent = IOS_NOT_SAFARI ? '⌨️ 下の欄→キーボードの🎤で話す（Safariならボタンで話せます）' : '⌨️ キーボードのマイクで話してください';
-  $('mic').onclick = ()=> $('memo').focus();
+  keyboardMode();
 }
 function startRec(silent){ try{ recog.start(); }catch(e){ if (!silent) toast('音声入力を開始できませんでした。もう一度🎤を押してください'); } }
 if (recog) $('mic').onclick = ()=> recording ? recog.stop() : startRec(false);
+function stopRec(){ if (recog && recording) recog.stop(); }
 
 let amountTouched=false;
 function onMemo(){ if (!amountTouched){ const a=parseAmount($('memo').value); $('amount').value = a ? String(a) : ''; } updateSend(); }
 $('amount').addEventListener('input', ()=>{ amountTouched = $('amount').value!==''; });
 function amountValue(){ const v=$('amount').value.normalize('NFKC').replace(/[^0-9]/g,''); return v ? Number(v) : parseAmount($('memo').value); }
-$('memo').addEventListener('input', onMemo);
+// iPhone のキーボード音声入力は input イベントが来ないことがあるので、複数のきっかけ＋定期チェックで拾う
+['input','change','keyup','compositionend','blur'].forEach(t => $('memo').addEventListener(t, onMemo));
+let lastMemo='';
+setInterval(()=>{ const v=$('memo').value; if (v!==lastMemo){ lastMemo=v; onMemo(); } }, 500);
 function updateSend(){ $('send').disabled = !photo; }
 
 // ---------- ③ 送信（失敗したら端末に貯めて、次回自動で再送） ----------
@@ -272,7 +284,7 @@ window.addEventListener('online', flushQueue);
 
 $('send').onclick = async ()=>{
   if (!photo) return;
-  if (recording) recog.stop();
+  stopRec();
   const memo=$('memo').value.trim();
   const item={ at:new Date().toISOString(), who:cfg.who||'', memo, amount:amountValue(), image:photo };
   $('send').disabled=true; $('send').textContent='送信中…';
