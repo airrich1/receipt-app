@@ -39,7 +39,10 @@
     border:1px solid var(--line);background:var(--bg);color:var(--ink);font-family:inherit}
   textarea{min-height:64px;resize:vertical;margin-top:10px}
   .amount{font-size:15px;color:var(--sub);margin-top:8px}
-  .amount b{font-size:22px;color:var(--ink)}
+  .amount{display:block}
+  .amtrow{display:flex;align-items:center;gap:8px;margin-top:6px}
+  .amtrow input{flex:1;font-size:22px;font-weight:700;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+  .amtrow span{font-size:18px;color:var(--ink)}
   .hint{font-size:13px;color:var(--sub);line-height:1.6}
   #toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translateX(-50%);
     background:var(--ink);color:var(--bg);padding:12px 18px;border-radius:999px;font-size:15px;
@@ -86,7 +89,8 @@
       <p class="step">② しゃべる（例：「コンビニで文房具 1200円」）</p>
       <button class="big ghost" id="mic">🎤 タップして話す</button>
       <textarea id="memo" placeholder="ここに文字が入ります（手入力もOK）"></textarea>
-      <div class="amount">金額：<b id="amountView">—</b></div>
+      <label class="amount">金額（自動で入ります・直せます）
+        <div class="amtrow"><input type="text" id="amount" inputmode="numeric" placeholder="例：1200" autocomplete="off"><span>円</span></div></label>
     </div>
 
     <button class="big" id="send" disabled>✅ 送る</button>
@@ -128,7 +132,7 @@ function kanjiToNum(s){
 }
 function parseAmount(text){
   if (!text) return null;
-  const t = text.normalize('NFKC').replace(/[,，、]/g,'');
+  const t = text.normalize('NFKC').replace(/[,，、]/g,'').replace(/えん/g,'円').replace(/[¥￥]\s*([0-9]+)/g,'$1円');
   // 「〜円」を優先、なければ最後の数字のかたまり
   const yen = [...t.matchAll(/([0-9〇零一二三四五六七八九十百千万]+)\s*円/g)];
   const pick = yen.length ? yen[yen.length-1][1]
@@ -185,7 +189,7 @@ $('file').onchange = async (e)=>{
     $('shoot').classList.add('ghost');
     updateSend();
     // 撮ったらそのまま音声入力へ（対応端末のみ）
-    if (recog) startRec();
+    if (recog) startRec(true); // 自動開始は失敗しても黙って無視
   }catch(err){ toast('画像を読み込めませんでした'); }
   e.target.value='';
 };
@@ -217,11 +221,13 @@ if (SR){
   $('mic').textContent = IOS_NOT_SAFARI ? '⌨️ 下の欄→キーボードの🎤で話す（Safariならボタンで話せます）' : '⌨️ キーボードのマイクで話してください';
   $('mic').onclick = ()=> $('memo').focus();
 }
-function startRec(){ try{ recog.start(); }catch(e){ toast('音声入力を開始できませんでした。もう一度🎤を押してください'); } }
-if (recog) $('mic').onclick = ()=> recording ? recog.stop() : startRec();
+function startRec(silent){ try{ recog.start(); }catch(e){ if (!silent) toast('音声入力を開始できませんでした。もう一度🎤を押してください'); } }
+if (recog) $('mic').onclick = ()=> recording ? recog.stop() : startRec(false);
 
-function onMemo(){ const a=parseAmount($('memo').value);
-  $('amountView').textContent = a ? a.toLocaleString('ja-JP')+' 円' : '—'; updateSend(); }
+let amountTouched=false;
+function onMemo(){ if (!amountTouched){ const a=parseAmount($('memo').value); $('amount').value = a ? String(a) : ''; } updateSend(); }
+$('amount').addEventListener('input', ()=>{ amountTouched = $('amount').value!==''; });
+function amountValue(){ const v=$('amount').value.normalize('NFKC').replace(/[^0-9]/g,''); return v ? Number(v) : parseAmount($('memo').value); }
 $('memo').addEventListener('input', onMemo);
 function updateSend(){ $('send').disabled = !photo; }
 
@@ -268,7 +274,7 @@ $('send').onclick = async ()=>{
   if (!photo) return;
   if (recording) recog.stop();
   const memo=$('memo').value.trim();
-  const item={ at:new Date().toISOString(), who:cfg.who||'', memo, amount:parseAmount(memo), image:photo };
+  const item={ at:new Date().toISOString(), who:cfg.who||'', memo, amount:amountValue(), image:photo };
   $('send').disabled=true; $('send').textContent='送信中…';
   try{
     await post(item);
@@ -281,7 +287,7 @@ $('send').onclick = async ()=>{
     renderHist();
   }
   // リセット → すぐ次の1枚へ
-  photo=null; $('preview').style.display='none'; $('memo').value=''; onMemo();
+  photo=null; $('preview').style.display='none'; $('memo').value=''; amountTouched=false; onMemo();
   $('shoot').textContent='📷 撮影する'; $('shoot').classList.remove('ghost');
   $('send').textContent='✅ 送る'; updateSend();
 };
