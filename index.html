@@ -201,12 +201,21 @@ if (SR){
   recog.onresult = (ev)=>{ let s=''; for (const r of ev.results) s += r[0].transcript;
     $('memo').value = base + s; onMemo(); };
   recog.onend = ()=>{ recording=false; $('mic').classList.remove('rec'); $('mic').textContent='🎤 タップして話す'; };
-  recog.onerror = (ev)=>{ if (ev.error==='not-allowed') toast('マイクの使用を許可してください'); };
+  recog.onerror = (ev)=>{
+    const msg = {
+      'not-allowed':'マイクがブロックされています。アドレス欄の🔒からマイクを「許可」にしてください',
+      'service-not-allowed':'この端末では音声入力が使えません。キーボードのマイクで入力してください',
+      'no-speech':'声が聞き取れませんでした。もう一度🎤を押して話してください',
+      'audio-capture':'マイクが見つかりません。マイクの接続を確認してください',
+      'network':'音声入力にはネット接続が必要です'
+    }[ev.error];
+    if (ev.error!=='aborted') toast(msg || ('音声入力エラー：'+ev.error));
+  };
 } else {
   $('mic').textContent='⌨️ キーボードのマイクで話してください';
   $('mic').onclick = ()=> $('memo').focus();
 }
-function startRec(){ try{ recog.start(); }catch(e){} }
+function startRec(){ try{ recog.start(); }catch(e){ toast('音声入力を開始できませんでした。もう一度🎤を押してください'); } }
 if (recog) $('mic').onclick = ()=> recording ? recog.stop() : startRec();
 
 function onMemo(){ const a=parseAmount($('memo').value);
