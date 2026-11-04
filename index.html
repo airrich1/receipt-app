@@ -191,7 +191,9 @@ $('file').onchange = async (e)=>{
 };
 
 // ---------- ② 音声入力 ----------
-const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+// iPhone の Chrome / Edge などは音声認識が使えないため、キーボードのマイクを案内する
+const IOS_NOT_SAFARI = /iP(hone|ad|od)/.test(navigator.userAgent) && /CriOS|FxiOS|EdgiOS/.test(navigator.userAgent);
+const SR = IOS_NOT_SAFARI ? null : (window.SpeechRecognition || window.webkitSpeechRecognition);
 let recog = null, recording = false;
 if (SR){
   recog = new SR(); recog.lang='ja-JP'; recog.interimResults=true; recog.continuous=false;
@@ -204,7 +206,7 @@ if (SR){
   recog.onerror = (ev)=>{
     const msg = {
       'not-allowed':'マイクがブロックされています。アドレス欄の🔒からマイクを「許可」にしてください',
-      'service-not-allowed':'この端末では音声入力が使えません。キーボードのマイクで入力してください',
+      'service-not-allowed':'音声入力が使えません。iPhoneは「設定→一般→キーボード→音声入力」をオンにするか、キーボードのマイクで入力してください',
       'no-speech':'声が聞き取れませんでした。もう一度🎤を押して話してください',
       'audio-capture':'マイクが見つかりません。マイクの接続を確認してください',
       'network':'音声入力にはネット接続が必要です'
@@ -212,7 +214,7 @@ if (SR){
     if (ev.error!=='aborted') toast(msg || ('音声入力エラー：'+ev.error));
   };
 } else {
-  $('mic').textContent='⌨️ キーボードのマイクで話してください';
+  $('mic').textContent = IOS_NOT_SAFARI ? '⌨️ 下の欄→キーボードの🎤で話す（Safariならボタンで話せます）' : '⌨️ キーボードのマイクで話してください';
   $('mic').onclick = ()=> $('memo').focus();
 }
 function startRec(){ try{ recog.start(); }catch(e){ toast('音声入力を開始できませんでした。もう一度🎤を押してください'); } }
