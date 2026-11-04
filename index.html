@@ -38,11 +38,6 @@
   textarea,input[type=url],input[type=text]{width:100%;font-size:16px;padding:12px;border-radius:10px;
     border:1px solid var(--line);background:var(--bg);color:var(--ink);font-family:inherit}
   textarea{min-height:64px;resize:vertical;margin-top:10px}
-  .amount{font-size:15px;color:var(--sub);margin-top:8px}
-  .amount{display:block}
-  .amtrow{display:flex;align-items:center;gap:8px;margin-top:6px}
-  .amtrow input{flex:1;font-size:22px;font-weight:700;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
-  .amtrow span{font-size:18px;color:var(--ink)}
   .hint{font-size:13px;color:var(--sub);line-height:1.6}
   #toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translateX(-50%);
     background:var(--ink);color:var(--bg);padding:12px 18px;border-radius:999px;font-size:15px;
@@ -86,11 +81,9 @@
     </div>
 
     <div class="card">
-      <p class="step">② しゃべる（例：「コンビニで文房具 1200円」）</p>
+      <p class="step">② しゃべる（例：「コンビニで文房具」）</p>
       <button class="big ghost" id="mic">🎤 タップして話す</button>
       <textarea id="memo" placeholder="ここに文字が入ります（手入力もOK）"></textarea>
-      <label class="amount">金額（自動で入ります・直せます）
-        <div class="amtrow"><input type="text" id="amount" inputmode="numeric" placeholder="例：1200" autocomplete="off"><span>円</span></div></label>
     </div>
 
     <button class="big" id="send" disabled>✅ 送る</button>
@@ -115,36 +108,8 @@ const $ = id => document.getElementById(id);
 const toast = (msg) => { const t=$('toast'); t.textContent=msg; t.classList.add('show');
   clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('show'), 2600); };
 
-// ---------- 金額の読み取り（音声テキストから） ----------
-const KANJI = {'〇':0,'零':0,'一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9};
-function kanjiToNum(s){
-  // 「千二百」「1万2000」「3千」など、数字と漢数字の混在に対応
-  let total=0, section=0, cur=0, any=false;
-  for (const ch of s){
-    if (/[0-9]/.test(ch)) { cur = cur*10 + Number(ch); any=true; }
-    else if (ch in KANJI) { cur = cur*10 + KANJI[ch]; any=true; }
-    else if (ch==='十'||ch==='百'||ch==='千'){
-      const m = ch==='十'?10:ch==='百'?100:1000;
-      section += (cur||1)*m; cur=0; any=true;
-    } else if (ch==='万'){ total += (section+cur||1)*10000; section=0; cur=0; any=true; }
-  }
-  return any ? total+section+cur : null;
-}
-function parseAmount(text){
-  if (!text) return null;
-  const t = text.normalize('NFKC').replace(/[,，、]/g,'').replace(/えん/g,'円').replace(/[¥￥]\s*([0-9]+)/g,'$1円');
-  // 「〜円」を優先、なければ最後の数字のかたまり
-  const yen = [...t.matchAll(/([0-9〇零一二三四五六七八九十百千万]+)\s*円/g)];
-  const pick = yen.length ? yen[yen.length-1][1]
-             : (t.match(/[0-9]+(?!.*[0-9])/)||[])[0];
-  if (!pick) return null;
-  const n = kanjiToNum(pick);
-  return (n && n>0 && n<100000000) ? n : null;
-}
-window.parseAmount = parseAmount; // テスト用
-
 // ---------- 画像を小さくする（送信を速く） ----------
-function shrink(file, maxSide=1600, quality=0.8){
+function shrink(file, maxSide=1280, quality=0.7){
   return new Promise((resolve, reject)=>{
     const img = new Image();
     img.onload = ()=>{
@@ -213,7 +178,7 @@ if (SR){
   recog.onstart = ()=>{ recording=true; base=$('memo').value ? $('memo').value+' ' : '';
     $('mic').classList.add('rec'); $('mic').textContent='🔴 聞いています…（タップで終了）'; };
   recog.onresult = (ev)=>{ let s=''; for (const r of ev.results) s += r[0].transcript;
-    $('memo').value = base + s; onMemo(); };
+    $('memo').value = base + s; };
   recog.onend = ()=>{ if (!recog) return; recording=false; $('mic').classList.remove('rec'); $('mic').textContent='🎤 タップして話す'; };
   recog.onerror = (ev)=>{
     const msg = {
@@ -233,14 +198,6 @@ function startRec(silent){ try{ recog.start(); }catch(e){ if (!silent) toast('�
 if (recog) $('mic').onclick = ()=> recording ? recog.stop() : startRec(false);
 function stopRec(){ if (recog && recording) recog.stop(); }
 
-let amountTouched=false;
-function onMemo(){ if (!amountTouched){ const a=parseAmount($('memo').value); $('amount').value = a ? String(a) : ''; } updateSend(); }
-$('amount').addEventListener('input', ()=>{ amountTouched = $('amount').value!==''; });
-function amountValue(){ const v=$('amount').value.normalize('NFKC').replace(/[^0-9]/g,''); return v ? Number(v) : parseAmount($('memo').value); }
-// iPhone のキーボード音声入力は input イベントが来ないことがあるので、複数のきっかけ＋定期チェックで拾う
-['input','change','keyup','compositionend','blur'].forEach(t => $('memo').addEventListener(t, onMemo));
-let lastMemo='';
-setInterval(()=>{ const v=$('memo').value; if (v!==lastMemo){ lastMemo=v; onMemo(); } }, 500);
 function updateSend(){ $('send').disabled = !photo; }
 
 // ---------- ③ 送信（失敗したら端末に貯めて、次回自動で再送） ----------
@@ -255,53 +212,66 @@ async function post(item){
   if (j.ok===false) throw new Error(j.error||'error');
   return j;
 }
-function addHist(h){ const list=store.get('hist',[]); list.unshift(h); store.set('hist', list.slice(0,20)); renderHist(); }
+// 送信待ちの列：端末に保存（容量オーバー時はメモリ上）。送信は裏で行い、画面は待たせない
+let memQueue = [];
+function getQueue(){ return store.get('queue', []).concat(memQueue); }
+function enqueue(item){
+  const q = store.get('queue', []); q.push(item);
+  if (!store.set('queue', q)) memQueue.push(item);
+}
+function dequeue(id){
+  store.set('queue', store.get('queue', []).filter(x => x.id !== id));
+  memQueue = memQueue.filter(x => x.id !== id);
+}
+function addHist(h){ const list=store.get('hist',[]); list.unshift(h); store.set('hist', list.slice(0,20)); }
 function renderHist(){
-  const list=store.get('hist',[]), q=store.get('queue',[]), ul=$('hist'); ul.innerHTML='';
-  const rows=[...q.map(x=>({...x, wait:true})), ...list];
+  const list=store.get('hist',[]), ul=$('hist'); ul.innerHTML='';
+  const rows=[...getQueue().slice().reverse().map(x=>({at:x.at, memo:x.memo, wait:true})), ...list];
   $('histEmpty').hidden = rows.length>0;
   for (const h of rows.slice(0,20)){
     const li=document.createElement('li');
     const left=document.createElement('div'); left.style.minWidth='0';
     const d=new Date(h.at);
-    left.innerHTML = `<div>${d.getMonth()+1}/${d.getDate()} ${h.amount? h.amount.toLocaleString('ja-JP')+'円':''}</div>`;
-    const m=document.createElement('div'); m.className='memo'; m.textContent=h.memo||'（メモなし）'; left.appendChild(m);
-    const b=document.createElement('span'); b.className='badge '+(h.wait?'wait':'ok'); b.textContent=h.wait?'未送信':'送信済';
+    const top=document.createElement('div');
+    top.textContent=(d.getMonth()+1)+'/'+d.getDate()+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+    const m=document.createElement('div'); m.className='memo'; m.textContent=h.memo||'（メモなし）';
+    left.append(top, m);
+    const b=document.createElement('span'); b.className='badge '+(h.wait?'wait':'ok'); b.textContent=h.wait?'送信中…':'送信済';
     li.append(left,b); ul.appendChild(li);
   }
 }
+let flushing=false, retryTimer=null;
 async function flushQueue(){
-  const q=store.get('queue',[]); if (!q.length || !navigator.onLine) return;
-  const rest=[];
-  for (const item of q){
-    try{ await post(item); addHist({at:item.at, amount:item.amount, memo:item.memo}); }
-    catch(e){ rest.push(item); }
-  }
-  store.set('queue', rest); renderHist();
-  if (q.length>rest.length) toast(`未送信の ${q.length-rest.length} 件を送りました`);
+  if (flushing) return; flushing=true;
+  try{
+    let item;
+    while ((item = getQueue()[0])){
+      try{ await post(item); }
+      catch(e){ // 失敗したら30秒後にもう一度
+        clearTimeout(retryTimer); retryTimer=setTimeout(flushQueue, 30000);
+        break;
+      }
+      dequeue(item.id);
+      addHist({at:item.at, memo:item.memo});
+      renderHist();
+    }
+  } finally { flushing=false; renderHist(); }
 }
 window.addEventListener('online', flushQueue);
+document.addEventListener('visibilitychange', ()=>{ if (!document.hidden) flushQueue(); });
 
-$('send').onclick = async ()=>{
+$('send').onclick = ()=>{
   if (!photo) return;
   stopRec();
   const memo=$('memo').value.trim();
-  const item={ at:new Date().toISOString(), who:cfg.who||'', memo, amount:amountValue(), image:photo };
-  $('send').disabled=true; $('send').textContent='送信中…';
-  try{
-    await post(item);
-    addHist({at:item.at, amount:item.amount, memo});
-    toast('送りました！');
-  }catch(e){
-    const q=store.get('queue',[]); q.push(item);
-    if (store.set('queue', q)) toast('電波が弱いので保存しました。あとで自動で送ります');
-    else toast('送信できませんでした。もう一度お試しください');
-    renderHist();
-  }
-  // リセット → すぐ次の1枚へ
-  photo=null; $('preview').style.display='none'; $('memo').value=''; amountTouched=false; onMemo();
+  const at=new Date().toISOString();
+  enqueue({ id: at+'-'+Math.random().toString(36).slice(2,8), at, who:cfg.who||'', memo, image:photo });
+  toast('受け付けました！（裏で送っています）');
+  // すぐリセット → 次の1枚へ。送信は待たない
+  photo=null; $('preview').style.display='none'; $('memo').value='';
   $('shoot').textContent='📷 撮影する'; $('shoot').classList.remove('ghost');
-  $('send').textContent='✅ 送る'; updateSend();
+  updateSend(); renderHist();
+  flushQueue();
 };
 
 cfg.endpoint ? showApp() : showSetup();
