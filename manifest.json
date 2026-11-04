@@ -1,0 +1,9 @@
+{
+  "name": "パシャ領収書",
+  "short_name": "領収書",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f6f7f5",
+  "theme_color": "#0f766e",
+  "lang": "ja"
+}
