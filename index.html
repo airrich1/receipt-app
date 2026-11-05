@@ -240,22 +240,26 @@ function renderHist(){
     li.append(left,b); ul.appendChild(li);
   }
 }
-let flushing=false, retryTimer=null;
-async function flushQueue(){
-  if (flushing) return; flushing=true;
-  try{
-    let item;
-    while ((item = getQueue()[0])){
-      try{ await post(item); }
-      catch(e){ // 失敗したら30秒後にもう一度
-        clearTimeout(retryTimer); retryTimer=setTimeout(flushQueue, 30000);
-        break;
-      }
+// 最大3件を同時に送る（たまっているときに速く終わる）
+const PARALLEL = 3;
+const inflight = new Set();
+let retryTimer = null;
+function flushQueue(){
+  for (const item of getQueue()){
+    if (inflight.size >= PARALLEL) break;
+    if (inflight.has(item.id)) continue;
+    inflight.add(item.id);
+    post(item).then(()=>{
       dequeue(item.id);
       addHist({at:item.at, memo:item.memo});
-      renderHist();
-    }
-  } finally { flushing=false; renderHist(); }
+    }, ()=>{ // 失敗したら30秒後にもう一度
+      clearTimeout(retryTimer); retryTimer = setTimeout(flushQueue, 30000);
+      item.failed = true;
+    }).finally(()=>{
+      inflight.delete(item.id); renderHist();
+      if (!item.failed) flushQueue();
+    });
+  }
 }
 window.addEventListener('online', flushQueue);
 document.addEventListener('visibilitychange', ()=>{ if (!document.hidden) flushQueue(); });
